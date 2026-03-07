@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Upload, File, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Document } from '../types';
 
 export default function PatientDashboard() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const navigate = useNavigate(); // Initialize navigate
 
   useEffect(() => {
     // Fetch mock documents
@@ -19,23 +20,37 @@ export default function PatientDashboard() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // 1. CREATE A TEMPORARY LOCAL URL
+    // This allows the browser to display the file without re-downloading it.
+    const blobUrl = URL.createObjectURL(file);
+
     setIsUploading(true);
     const formData = new FormData();
     formData.append('document', file);
 
     try {
+      // 2. MOCK UPLOAD (This sends it to your server)
       const res = await fetch('/api/documents/upload', {
         method: 'POST',
         body: formData,
       });
       const data = await res.json();
-      console.log("Upload success:", data);
+
+      const newDocId = data.id || `doc-${Date.now()}`;
       
-      // Add mock document to list
+      // Update your local list
       setDocuments(prev => [
-        { id: `doc-${Date.now()}`, name: file.name, date: new Date().toISOString().split('T')[0], status: 'processing' },
+        {id: newDocId, name: file.name, date: new Date().toISOString().split('T')[0], status: 'processing'},
         ...prev
       ]);
+
+      // 3. THE NAVIGATION TRICK
+      // We pass the 'blobUrl' inside the 'state' object.
+      // This is what the 'DocumentView' looks for to avoid the "Failed to load" error.
+      navigate(`/document/${newDocId}?role=patient`, { 
+        state: { fileUrl: blobUrl } 
+      });
+
     } catch (error) {
       console.error("Upload failed", error);
     } finally {
