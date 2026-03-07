@@ -1,20 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MessageSquare, FileText, UserPlus, Activity, Users, Clipboard, Upload, UserMinus, X, Loader2, Trash2 } from 'lucide-react'; // Added Trash2
+import { MessageSquare, FileText, UserPlus, Activity, Users, Clipboard, Upload, UserMinus, X, Loader2, Copy, Search, Globe } from 'lucide-react';
 import { db, auth } from '../routes/firebase';
-import {
-  collection, query, onSnapshot, where, doc,
-  updateDoc, addDoc, serverTimestamp, deleteDoc // Added deleteDoc
-} from 'firebase/firestore';
+import { collection, query, onSnapshot, where, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
 export default function DoctorDashboard() {
   const [reports, setReports] = useState<any[]>([]);
   const [unassignedPatients, setUnassignedPatients] = useState<any[]>([]);
   const [myPatients, setMyPatients] = useState<any[]>([]);
+  const [allPatients, setAllPatients] = useState<any[]>([]); 
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-
+  const [searchTerm, setSearchTerm] = useState(""); 
+  
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -23,8 +22,9 @@ export default function DoctorDashboard() {
 
   useEffect(() => {
     let unsubDocs: () => void;
-    let unsubUnassigned: () => void;
+    let unsubRequests: () => void;
     let unsubMyPatients: () => void;
+    let unsubAllPatients: () => void;
     let unsubUser: () => void;
 
     const unsubAuth = onAuthStateChanged(auth, (user) => {
@@ -39,17 +39,28 @@ export default function DoctorDashboard() {
             .map(d => ({ id: d.id, ...d.data() }))
             .sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
           setReports(sortedDocs);
-          setLoading(false);
+          setLoading(false); 
         });
 
-        const qUnassigned = query(collection(db, "users"), where("role", "==", "patient"), where("assignedDoctorId", "==", null));
-        unsubUnassigned = onSnapshot(qUnassigned, (snap) => {
-          setUnassignedPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        // 3. Get patients who requested THIS doctor (and are not yet assigned)
+        const qRequests = query(collection(db, "users"), where("role", "==", "patient"), where("requestedDoctorIds", "array-contains", user.uid));
+        unsubRequests = onSnapshot(qRequests, (snap) => {
+          const pendingRequests = snap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter((p: any) => !p.assignedDoctorId); // Filter locally
+          setUnassignedPatients(pendingRequests);
         });
 
+        // 4. Get my claimed patients (1-to-1)
         const qMyPatients = query(collection(db, "users"), where("assignedDoctorId", "==", user.uid));
         unsubMyPatients = onSnapshot(qMyPatients, (snap) => {
           setMyPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
+        // 5. Get ALL patients for the override directory
+        const qAllPatients = query(collection(db, "users"), where("role", "==", "patient"));
+        unsubAllPatients = onSnapshot(qAllPatients, (snap) => {
+          setAllPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
 
       } else {
@@ -60,32 +71,22 @@ export default function DoctorDashboard() {
     return () => {
       unsubAuth();
       if (unsubDocs) unsubDocs();
-      if (unsubUnassigned) unsubUnassigned();
+      if (unsubRequests) unsubRequests();
       if (unsubMyPatients) unsubMyPatients();
+      if (unsubAllPatients) unsubAllPatients();
       if (unsubUser) unsubUser();
     };
   }, [navigate]);
 
-  // --- ACTIONS ---
-
-  // NEW: Delete Function
-  const handleDeleteReport = async (reportId: string) => {
-    if (!window.confirm("Are you sure you want to permanently delete this record?")) return;
-
-    try {
-      await deleteDoc(doc(db, "documents", reportId));
-    } catch (err) {
-      console.error("Delete failed:", err);
-      alert("Failed to delete the document.");
-    }
-  };
-
+  // CLAIM LOGIC: Creates 1-to-1 link and ERASES requests so no one else can claim
   const claimPatient = async (patientId: string) => {
     if (!doctorUid) return;
     await updateDoc(doc(db, "users", patientId), {
       assignedDoctorId: doctorUid,
-      assignedDoctorName: userData?.displayName || "Dr. Specialist"
+      assignedDoctorName: userData?.displayName || "Dr. Specialist",
+      requestedDoctorIds: [] // Wipe out requests, they are taken!
     });
+    setSearchTerm(""); 
   };
 
   const unassignPatient = async (patientId: string) => {
@@ -106,7 +107,7 @@ export default function DoctorDashboard() {
       name: file.name,
       patientId: patientId,
       patientName: patientName,
-      doctorId: doctorUid,
+      doctorId: doctorUid, 
       status: 'Ready',
       createdAt: serverTimestamp(),
       uploadedBy: 'doctor'
@@ -125,14 +126,43 @@ export default function DoctorDashboard() {
   }
 
   const patientReports = reports.filter(r => r.patientId === selectedPatient?.id);
+  
+  // DIRECTORY FILTER: Only show patients that have NO assigned doctor
+  const discoverablePatients = allPatients.filter(p => {
+    const isUnassigned = !p.assignedDoctorId;
+    const matchesSearch = searchTerm === "" || 
+      p.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      p.email?.toLowerCase().includes(searchTerm.toLowerCase());
+    return isUnassigned && matchesSearch;
+  });
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* ... Discovery Section ... */}
+      
+      {/* Doctor ID Bar */}
+      <div className="bg-white px-6 py-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <span className="text-sm font-medium text-slate-500">Your Doctor ID (Share with patients):</span>
+        <div className="flex items-center gap-2">
+          <code className="bg-slate-100 px-3 py-1 rounded text-sm font-bold text-slate-800">
+            {doctorUid}
+          </code>
+          <button 
+            onClick={() => {
+              navigator.clipboard.writeText(doctorUid || "");
+              alert("Doctor ID copied to clipboard!");
+            }}
+            className="text-indigo-600 hover:text-indigo-800 transition-colors p-1"
+          >
+            <Copy className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Discovery Section - Pending Requests */}
       {unassignedPatients.length > 0 && (
         <section className="bg-amber-50/80 p-6 rounded-[2rem] border border-amber-200 shadow-sm">
           <h2 className="text-sm font-black text-amber-800 uppercase tracking-widest flex items-center gap-2 mb-4">
-            <UserPlus className="h-4 w-4" /> New Patient Requests ({unassignedPatients.length})
+            <UserPlus className="h-4 w-4" /> Pending Patient Requests ({unassignedPatients.length})
           </h2>
           <div className="flex flex-wrap gap-4">
             {unassignedPatients.map(p => (
@@ -142,7 +172,7 @@ export default function DoctorDashboard() {
                   onClick={() => claimPatient(p.id)}
                   className="bg-amber-600 text-white text-[10px] px-4 py-2 rounded-lg font-black uppercase hover:bg-amber-700 transition-colors"
                 >
-                  Claim
+                  Accept Request
                 </button>
               </div>
             ))}
@@ -151,29 +181,75 @@ export default function DoctorDashboard() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* LEFT COLUMN: Patient List */}
-        <div className="space-y-6">
-          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <Users className="h-5 w-5 text-indigo-600" /> My Care Team
-          </h2>
-          <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
-            <div className="divide-y divide-slate-100">
-              {myPatients.map(p => (
-                <div
-                  key={p.id}
-                  onClick={() => setSelectedPatient(p)}
-                  className={`p-5 cursor-pointer transition-all flex items-center justify-between ${selectedPatient?.id === p.id ? 'bg-indigo-50 border-l-4 border-indigo-600' : 'hover:bg-slate-50 border-l-4 border-transparent'}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold capitalize ${selectedPatient?.id === p.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                      {p.displayName?.charAt(0) || 'P'}
+        <div className="space-y-8">
+          
+          {/* My Care Team */}
+          <div className="space-y-4">
+            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <Users className="h-5 w-5 text-indigo-600" /> My Care Team
+            </h2>
+            <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+              <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
+                {myPatients.map(p => (
+                  <div 
+                    key={p.id} 
+                    onClick={() => setSelectedPatient(p)}
+                    className={`p-5 cursor-pointer transition-all flex items-center justify-between ${selectedPatient?.id === p.id ? 'bg-indigo-50 border-l-4 border-indigo-600' : 'hover:bg-slate-50 border-l-4 border-transparent'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold capitalize ${selectedPatient?.id === p.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        {p.displayName?.charAt(0) || 'P'}
+                      </div>
+                      <span className="font-bold text-slate-800 text-sm">{p.displayName || p.email}</span>
                     </div>
-                    <span className="font-bold text-slate-800 text-sm">{p.displayName || p.email}</span>
                   </div>
-                </div>
-              ))}
+                ))}
+                {myPatients.length === 0 && (
+                  <p className="p-10 text-center text-slate-400 text-sm italic">No patients assigned yet.</p>
+                )}
+              </div>
             </div>
           </div>
+
+          {/* Global Patient Directory */}
+          <div className="space-y-4">
+            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <Globe className="h-5 w-5 text-emerald-600" /> Patient Directory
+            </h2>
+            <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm p-4">
+              <div className="relative mb-4">
+                <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input 
+                  type="text"
+                  placeholder="Search to add patient manually..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              
+              <div className="divide-y divide-slate-100 max-h-[300px] overflow-y-auto pr-2">
+                {discoverablePatients.slice(0, 10).map(p => (
+                  <div key={p.id} className="py-3 flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-800 text-sm">{p.displayName || 'Unnamed Patient'}</span>
+                      <span className="text-xs text-slate-500">{p.email}</span>
+                    </div>
+                    <button 
+                      onClick={() => claimPatient(p.id)}
+                      className="px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-colors border border-emerald-200"
+                    >
+                      Override & Add
+                    </button>
+                  </div>
+                ))}
+                {discoverablePatients.length === 0 && (
+                  <p className="py-4 text-center text-slate-400 text-xs italic">No patients match your search.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
         </div>
 
         {/* RIGHT COLUMN */}
@@ -182,7 +258,7 @@ export default function DoctorDashboard() {
             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
               <div className="p-6 bg-slate-900 text-white flex justify-between items-start">
                 <div>
-                  <h2 className="text-2xl font-bold">{selectedPatient.displayName}</h2>
+                  <h2 className="text-2xl font-bold">{selectedPatient.displayName || 'Unnamed Patient'}</h2>
                   <p className="text-slate-400 text-sm">{selectedPatient.email}</p>
                 </div>
                 <button onClick={() => setSelectedPatient(null)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors">
@@ -200,7 +276,7 @@ export default function DoctorDashboard() {
 
                 <label className="cursor-pointer bg-white border border-slate-300 text-slate-700 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
                   <Upload className="h-4 w-4" /> {isUploading ? 'Uploading...' : 'Add Report'}
-                  <input type="file" className="hidden" onChange={(e) => handleFileUploadForPatient(e, selectedPatient.id, selectedPatient.displayName)} disabled={isUploading} />
+                  <input type="file" className="hidden" onChange={(e) => handleFileUploadForPatient(e, selectedPatient.id, selectedPatient.displayName || 'Patient')} disabled={isUploading} />
                 </label>
 
                 <button
@@ -257,7 +333,7 @@ export default function DoctorDashboard() {
                         {report.patientName?.charAt(0) || 'P'}
                       </div>
                       <div>
-                        <p className="font-bold text-lg text-slate-900">{report.patientName}</p>
+                        <p className="font-bold text-lg text-slate-900">{report.patientName || 'Unnamed Patient'}</p>
                         <p className="text-xs text-slate-500 flex items-center gap-1 font-medium">
                           <Clipboard className="h-3 w-3" /> {report.name}
                         </p>
