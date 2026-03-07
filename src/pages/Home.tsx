@@ -57,13 +57,20 @@ export default function Home() {
             className="hidden"
             accept = ".pdf,.doc,.docx,.txt"
           />
-          <button
+          {/* <button
             onClick={handleUploadClick}
             className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-all"
           >
             <Upload className="h-5 w-5 inline-block mr-2" />
             I am a Patient
-          </button>
+          </button> */}
+
+          <Link
+            to="/patient"
+            className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-all"
+          >
+            I am a Patient
+          </Link>  
 
           <Link
             to="/doctor"
