@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Login from './pages/Login'; // Add this import
-import Signup from './pages/SignUp'; // Add this import
+import Signup from './pages/Signup'; // Add this import
 import PatientDashboard from './pages/PatientDashboard';
 import DoctorDashboard from './pages/DoctorDashboard';
 import DocumentView from './pages/DocumentView';
@@ -16,7 +16,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
-            
+
             {/* The Layout should wrap the protected portal routes */}
             <Route path="/patient" element={<PatientDashboard />} />
             <Route path="/doctor" element={<DoctorDashboard />} />
