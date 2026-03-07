@@ -1,0 +1,5 @@
+{
+  "name": "MedConnect AI",
+  "description": "A medical communication platform facilitating patient-doctor interaction through AI-assisted document parsing and summarization.",
+  "requestFramePermissions": []
+}
