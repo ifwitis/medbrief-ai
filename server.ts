@@ -1,3 +1,5 @@
+import 'dotenv/config';
+import { processMedicalDocument } from "./server/services/gemini";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import multer from "multer";
@@ -28,29 +30,22 @@ async function startServer() {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
       }
+
+      const analysis = await processMedicalDocument(req.file.buffer, req.file.mimetype, {
+        language: "English",
+        difficulty: "layman",
+        detailLevel: "summary"
+        }
+      );
       
       // TODO: Implement Gemini AI processing here
       // 1. Convert file buffer to base64
       // 2. Call Gemini API to parse and summarize the document
       // 3. Return structured data (prioritized items, vague details, etc.)
       
-      res.json({
-        message: "File uploaded successfully. AI processing pending.",
-        fileName: req.file.originalname,
-        size: req.file.size,
+      res.json({structuredData: analysis});
         // Mock response for now
-        structuredData: {
-          priorityItems: [
-            { id: 1, text: "Elevated blood pressure", clarity: "High" },
-            { id: 2, text: "Low Vitamin D levels", clarity: "Medium" }
-          ],
-          vagueDetails: [
-            { id: 3, text: "Patient reports occasional fatigue", clarity: "Low" }
-          ]
-        }
-      });
     } catch (error) {
-      console.error("Upload error:", error);
       res.status(500).json({ error: "Failed to process document" });
     }
   });
