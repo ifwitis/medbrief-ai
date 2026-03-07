@@ -24,13 +24,11 @@ export default function PatientDashboard() {
 
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // 1. Listen to User Data
         unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
           setUserData(docSnap.data());
           setLoading(false); 
         });
 
-        // 2. Listen to Documents
         const qDocs = query(collection(db, "documents"), where("patientId", "==", user.uid));
         unsubDocs = onSnapshot(qDocs, (snapshot) => {
           const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -38,7 +36,6 @@ export default function PatientDashboard() {
           setDocuments(docs);
         });
 
-        // 3. Fetch all doctors for the dropdown
         const qDoctors = query(collection(db, "users"), where("role", "==", "doctor"));
         unsubDoctors = onSnapshot(qDoctors, (snapshot) => {
           setAllDoctors(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -64,17 +61,46 @@ export default function PatientDashboard() {
     setIsUploading(true);
 
     try {
-      await addDoc(collection(db, "documents"), {
-        name: file.name,
-        patientId: user.uid,
-        patientName: userData?.displayName || user.email?.split('@')[0],
-        doctorId: userData?.assignedDoctorId || null, // 1-to-1 doctor link
-        status: 'Ready',
-        uploadedBy: 'patient',
-        createdAt: serverTimestamp(),
+      const formData = new FormData();
+      formData.append('document', file);
+
+      const response = await fetch('http://localhost:3000/api/documents/upload', {
+        method: 'POST',
+        body: formData,
       });
-    } catch (err) {
+
+      // NEW: Smart error handling that reads the message from the server
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Server upload failed');
+      }
+
+      const result = await response.json();
+
+      if (result.structuredData) {
+        const docRef = await addDoc(collection(db, "documents"), {
+          name: file.name,
+          patientId: user.uid,
+          patientName: userData?.displayName || user.email?.split('@')[0],
+          doctorId: userData?.assignedDoctorId || null,
+          status: 'Ready',
+          uploadedBy: 'patient',
+          createdAt: serverTimestamp(),
+          aiSummary: result.structuredData
+        });
+
+        const fileUrl = URL.createObjectURL(file);
+        navigate(`/document/${docRef.id}?role=patient`, { 
+          state: { 
+            initialData: result.structuredData,
+            fileUrl: fileUrl 
+          } 
+        });
+      }
+    } catch (err: any) {
       console.error("Upload failed:", err);
+      // Alerts the specific error message sent from the server!
+      alert(err.message || "Failed to analyze the document. Is your server running?");
     } finally {
       setIsUploading(false);
     }
@@ -115,17 +141,15 @@ export default function PatientDashboard() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       
-      {/* Personalized Greeting */}
       <div className="pt-2 pb-4">
         <h1 className="text-3xl font-black text-slate-900 tracking-tight">
           Hello, {userData?.displayName || userData?.email?.split('@')[0] || "Patient"} 👋
         </h1>
         <p className="text-slate-500 font-medium mt-1 text-sm">
-          Welcome to your secure health portal.
+          Welcome to your secure health portal. Here is a summary of your care.
         </p>
       </div>
 
-      {/* Care Status Card */}
       <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
 
@@ -144,7 +168,6 @@ export default function PatientDashboard() {
           </div>
         </div>
 
-        {/* This is the Chat Button. It only shows if a doctor has claimed the patient */}
         {userData?.assignedDoctorId && (
           <Link
             to={`/chat/room_${userData.assignedDoctorId}_${auth.currentUser?.uid}?name=${encodeURIComponent(userData?.assignedDoctorName || 'Doctor')}`}
@@ -155,7 +178,6 @@ export default function PatientDashboard() {
         )}
       </div>
 
-      {/* Doctor Request Dropdown - Disappears once claimed */}
       {!userData?.assignedDoctorId && (
         <div className="bg-indigo-50/50 p-6 rounded-[2.5rem] border border-indigo-100 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
           <div>
@@ -194,7 +216,6 @@ export default function PatientDashboard() {
         </div>
       )}
 
-      {/* Upload and History Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="bg-white p-10 rounded-[2.5rem] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group relative">
           <div className="bg-indigo-50 p-5 rounded-3xl mb-4 group-hover:scale-110 transition-transform shadow-sm">

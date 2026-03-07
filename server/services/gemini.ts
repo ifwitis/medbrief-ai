@@ -1,7 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize the Gemini API client
-// The API key is automatically injected by the AI Studio environment
 const apiKey = process.env.GEMINI_API_KEY;
 
 if (!apiKey) {
@@ -9,13 +8,9 @@ if (!apiKey) {
 }
 
 const ai = new GoogleGenAI({ apiKey: apiKey });
+
 /**
  * Processes a medical document using Gemini AI.
- * 
- * @param fileBuffer - The uploaded file buffer
- * @param mimeType - The MIME type of the file (e.g., 'application/pdf', 'image/jpeg')
- * @param options - Translation and summarization options
- * @returns Structured data containing priority items and vague details
  */
 export async function processMedicalDocument(
   fileBuffer: Buffer, 
@@ -23,10 +18,8 @@ export async function processMedicalDocument(
   options: { language: string; difficulty: string; detailLevel: string }
 ) {
   try {
-    // 1. Convert the file buffer to a base64 string
     const base64Data = fileBuffer.toString("base64");
 
-    // 2. Construct the prompt based on user options
     const prompt = `
       Analyze this medical document.
       Translate the findings to: ${options.language}.
@@ -35,12 +28,11 @@ export async function processMedicalDocument(
       
       Extract the most critical, factual findings as "priorityItems".
       Extract any unclear, subjective, or vague statements as "vagueDetails".
+      Create a caregiver summary including medications, lifestyle changes, and appointments.
     `;
 
-    // 3. Call the Gemini model
-    // Using gemini-3-flash-preview for general text/document tasks
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: {
         parts: [
           {
@@ -53,7 +45,6 @@ export async function processMedicalDocument(
         ],
       },
       config: {
-        // Enforce a structured JSON response
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -65,10 +56,11 @@ export async function processMedicalDocument(
                 type: Type.OBJECT,
                 properties: {
                   id: { type: Type.NUMBER },
-                  text: { type: Type.STRING, description: "The finding text" },
-                  clarity: { type: Type.STRING, description: "High, Medium, or Low" }
+                  text: { type: Type.STRING },
+                  clarity: { type: Type.STRING },
+                  category: { type: Type.STRING, description: "Warning, Health Risk, or Normal" }
                 },
-                required: ["id", "text", "clarity"]
+                required: ["id", "text", "clarity", "category"]
               }
             },
             vagueDetails: {
@@ -78,19 +70,47 @@ export async function processMedicalDocument(
                 type: Type.OBJECT,
                 properties: {
                   id: { type: Type.NUMBER },
-                  text: { type: Type.STRING, description: "The detail text" },
-                  clarity: { type: Type.STRING, description: "Always Low for vague details" }
+                  text: { type: Type.STRING },
+                  clarity: { type: Type.STRING }
                 },
                 required: ["id", "text", "clarity"]
               }
+            },
+            caregiverSummary: {
+              type: Type.OBJECT,
+              properties: {
+                medications: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      name: { type: Type.STRING },
+                      dosage: { type: Type.STRING },
+                      frequency: { type: Type.STRING },
+                      purpose: { type: Type.STRING }
+                    }
+                  }
+                },
+                lifestyle: { type: Type.ARRAY, items: { type: Type.STRING } },
+                appointments: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      provider: { type: Type.STRING },
+                      purpose: { type: Type.STRING },
+                      date: { type: Type.STRING }
+                    }
+                  }
+                }
+              }
             }
           },
-          required: ["priorityItems", "vagueDetails"]
+          required: ["priorityItems", "vagueDetails", "caregiverSummary"]
         }
       }
     });
 
-    // 4. Parse and return the structured JSON response
     if (response.text) {
       return JSON.parse(response.text);
     }

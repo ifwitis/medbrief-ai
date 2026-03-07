@@ -24,29 +24,41 @@ async function startServer() {
   });
 
   // Upload document endpoint
-  // Expected: multipart/form-data with a file field named "document"
   app.post("/api/documents/upload", upload.single("document"), async (req, res) => {
     try {
       if (!req.file) {
+        console.warn("Upload rejected: No file attached to request.");
         return res.status(400).json({ error: "No file uploaded" });
       }
+
+      console.log(`\n--- New Document Upload ---`);
+      console.log(`File Name: ${req.file.originalname}`);
+      console.log(`MIME Type: ${req.file.mimetype}`);
+      console.log(`Size: ${req.file.size} bytes`);
+      console.log(`Sending to Gemini API...`);
 
       const analysis = await processMedicalDocument(req.file.buffer, req.file.mimetype, {
         language: "English",
         difficulty: "layman",
         detailLevel: "summary"
-        }
-      );
+      });
       
-      // TODO: Implement Gemini AI processing here
-      // 1. Convert file buffer to base64
-      // 2. Call Gemini API to parse and summarize the document
-      // 3. Return structured data (prioritized items, vague details, etc.)
-      
+      console.log("✅ Gemini processing successful!");
       res.json({structuredData: analysis});
-        // Mock response for now
-    } catch (error) {
-      res.status(500).json({ error: "Failed to process document" });
+      
+    } catch (error: any) {
+      console.error("\n🔥 CRITICAL UPLOAD ERROR 🔥");
+      console.error(error);
+      console.error("---------------------------\n");
+      
+      // Smart Error Handling: Check if we hit the Google API Speed Limit
+      if (error.status === 429) {
+        return res.status(429).json({ 
+          error: "The AI is currently processing too many requests. Please wait 1 minute and try again." 
+        });
+      }
+      
+      res.status(500).json({ error: "Failed to process document with AI." });
     }
   });
 
