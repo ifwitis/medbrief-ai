@@ -41,7 +41,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   if (userRole === 'patient') {
     navItems.push({ path: '/patient', label: 'My Health', icon: UserIcon });
   } else if (userRole === 'doctor') {
-    navItems.push({ path: '/doctor', label: 'Appointments', icon: Stethoscope });
+    navItems.push({ path: '/doctor', label: 'Dashboard', icon: Stethoscope });
   }
 
   const handleSignOut = async () => {

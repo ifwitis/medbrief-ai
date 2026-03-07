@@ -12,16 +12,17 @@ export default function App() {
   return (
     <Router>
       <Layout>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          {/* Wrap these in your Layout component */}
-          <Route path="/patient" element={<Layout><PatientDashboard /></Layout>} />
-          <Route path="/doctor" element={<Layout><DoctorDashboard /></Layout>} />
-          <Route path="/chat/:roomId" element={<Layout><ChatPage /></Layout>} />
-          <Route path="/document/:id" element={<Layout><DocumentView /></Layout>} />
-        </Routes>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            
+            {/* The Layout should wrap the protected portal routes */}
+            <Route path="/patient" element={<PatientDashboard />} />
+            <Route path="/doctor" element={<DoctorDashboard />} />
+            <Route path="/chat/:roomId" element={<ChatPage />} />
+            <Route path="/document/:id" element={<DocumentView />} />
+          </Routes>
       </Layout>
     </Router>
   );

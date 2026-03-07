@@ -1,66 +1,276 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { MessageSquare, FileText, User, Bell } from 'lucide-react';
-import { db } from '../routes/firebase';
-import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom'; // Combined imports
+import { MessageSquare, FileText, UserPlus, Activity, Users, Clipboard, Upload, UserMinus, X, Loader2 } from 'lucide-react';
+import { db, auth } from '../routes/firebase';
+import { 
+  collection, query, onSnapshot, where, doc, 
+  updateDoc, addDoc, serverTimestamp 
+} from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 
 export default function DoctorDashboard() {
   const [reports, setReports] = useState<any[]>([]);
+  const [unassignedPatients, setUnassignedPatients] = useState<any[]>([]);
+  const [myPatients, setMyPatients] = useState<any[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  
+  // New states for refresh persistence
+  const [userData, setUserData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  const doctorUid = auth.currentUser?.uid;
 
   useEffect(() => {
-    // Ordering by creation time so newest patients are at the top
-    const q = query(collection(db, "documents"), orderBy("createdAt", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setReports(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    let unsubDocs: () => void;
+    let unsubUnassigned: () => void;
+    let unsubMyPatients: () => void;
+    let unsubUser: () => void;
+
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // 1. Listen to Doctor's own profile
+        unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+          setUserData(docSnap.data());
+        });
+
+        // 2. Get ALL reports assigned to this doctor
+        const qDocs = query(collection(db, "documents"), where("doctorId", "==", user.uid));
+        unsubDocs = onSnapshot(qDocs, (snap) => {
+          const sortedDocs = snap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+          setReports(sortedDocs);
+          setLoading(false); // Data is starting to arrive
+        });
+
+        // 3. Get unassigned patients
+        const qUnassigned = query(collection(db, "users"), where("role", "==", "patient"), where("assignedDoctorId", "==", null));
+        unsubUnassigned = onSnapshot(qUnassigned, (snap) => {
+          setUnassignedPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
+        // 4. Get my patients
+        const qMyPatients = query(collection(db, "users"), where("assignedDoctorId", "==", user.uid));
+        unsubMyPatients = onSnapshot(qMyPatients, (snap) => {
+          setMyPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
+      } else {
+        navigate('/login');
+      }
     });
-    return () => unsubscribe();
-  }, []);
+
+    return () => {
+      unsubAuth();
+      if (unsubDocs) unsubDocs();
+      if (unsubUnassigned) unsubUnassigned();
+      if (unsubMyPatients) unsubMyPatients();
+      if (unsubUser) unsubUser();
+    };
+  }, [navigate]);
+
+  // --- ACTIONS ---
+
+  const claimPatient = async (patientId: string) => {
+    if (!doctorUid) return;
+    await updateDoc(doc(db, "users", patientId), {
+      assignedDoctorId: doctorUid,
+      assignedDoctorName: userData?.displayName || "Dr. Specialist"
+    });
+  };
+
+  const unassignPatient = async (patientId: string) => {
+    if (!window.confirm("Are you sure you want to release this patient?")) return;
+    await updateDoc(doc(db, "users", patientId), {
+      assignedDoctorId: null,
+      assignedDoctorName: null
+    });
+    if (selectedPatient?.id === patientId) setSelectedPatient(null);
+  };
+
+  const handleFileUploadForPatient = async (e: React.ChangeEvent<HTMLInputElement>, patientId: string, patientName: string) => {
+    const file = e.target.files?.[0];
+    if (!file || !doctorUid) return;
+    setIsUploading(true);
+    
+    await addDoc(collection(db, "documents"), {
+      name: file.name,
+      patientId: patientId,
+      patientName: patientName,
+      doctorId: doctorUid,
+      status: 'Ready',
+      createdAt: serverTimestamp(),
+      uploadedBy: 'doctor'
+    });
+    
+    setIsUploading(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-20 space-y-4">
+        <Loader2 className="animate-spin text-indigo-600 h-10 w-10" />
+        <p className="text-slate-500 font-medium">Accessing Clinical Portal...</p>
+      </div>
+    );
+  }
+
+  // Filter reports for the detail view
+  const patientReports = reports.filter(r => r.patientId === selectedPatient?.id);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8">
-      <div className="flex justify-between items-end">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Clinical Queue</h1>
-          <p className="text-slate-500 mt-1">Review active patient submissions and provide AI-assisted clarity.</p>
-        </div>
-        <div className="flex items-center gap-2 bg-amber-50 text-amber-700 px-4 py-2 rounded-xl border border-amber-100 font-bold text-sm">
-          <Bell className="h-4 w-4" /> {reports.length} Actions Required
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-1 gap-4">
-        {reports.map((report) => (
-          <div key={report.id} className="bg-white p-6 rounded-3xl border border-slate-200 flex flex-col md:flex-row items-center justify-between shadow-sm gap-6 hover:shadow-md transition-shadow">
-            <div className="flex items-center gap-5 w-full">
-              <div className="h-14 w-14 bg-gradient-to-tr from-indigo-600 to-indigo-500 rounded-2xl flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-indigo-100">
-                {report.patientName?.charAt(0)}
+    <div className="space-y-8 animate-in fade-in duration-500">
+      {/* Discovery Section */}
+      {unassignedPatients.length > 0 && (
+        <section className="bg-amber-50/80 p-6 rounded-[2rem] border border-amber-200 shadow-sm">
+          <h2 className="text-sm font-black text-amber-800 uppercase tracking-widest flex items-center gap-2 mb-4">
+            <UserPlus className="h-4 w-4" /> New Patient Requests ({unassignedPatients.length})
+          </h2>
+          <div className="flex flex-wrap gap-4">
+            {unassignedPatients.map(p => (
+              <div key={p.id} className="bg-white px-5 py-3 rounded-2xl border border-amber-200 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
+                <span className="font-bold text-slate-900">{p.displayName || p.email}</span>
+                <button 
+                  onClick={() => claimPatient(p.id)} 
+                  className="bg-amber-600 text-white text-[10px] px-4 py-2 rounded-lg font-black uppercase hover:bg-amber-700 transition-colors"
+                >
+                  Claim
+                </button>
               </div>
-              <div className="flex-1">
-                <p className="font-bold text-xl text-slate-900">{report.patientName}</p>
-                <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
-                  <span className="flex items-center gap-1 font-medium"><FileText className="h-4 w-4" /> {report.name}</span>
-                  <span className="text-slate-300">|</span>
-                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md uppercase tracking-wider">Awaiting Review</span>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* LEFT COLUMN: Patient List */}
+        <div className="space-y-6">
+          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <Users className="h-5 w-5 text-indigo-600" /> My Care Team
+          </h2>
+          <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+            <div className="divide-y divide-slate-100">
+              {myPatients.map(p => (
+                <div 
+                  key={p.id} 
+                  onClick={() => setSelectedPatient(p)}
+                  className={`p-5 cursor-pointer transition-all flex items-center justify-between ${selectedPatient?.id === p.id ? 'bg-indigo-50 border-l-4 border-indigo-600' : 'hover:bg-slate-50 border-l-4 border-transparent'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold capitalize ${selectedPatient?.id === p.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                      {p.displayName?.charAt(0) || 'P'}
+                    </div>
+                    <span className="font-bold text-slate-800 text-sm">{p.displayName || p.email}</span>
+                  </div>
+                </div>
+              ))}
+              {myPatients.length === 0 && (
+                <p className="p-10 text-center text-slate-400 text-sm italic">No patients claimed yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: Dynamic Content Area */}
+        <div className="lg:col-span-2 space-y-6">
+          {selectedPatient ? (
+            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
+              <div className="p-6 bg-slate-900 text-white flex justify-between items-start">
+                <div>
+                  <h2 className="text-2xl font-bold">{selectedPatient.displayName}</h2>
+                  <p className="text-slate-400 text-sm">{selectedPatient.email}</p>
+                </div>
+                <button onClick={() => setSelectedPatient(null)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="p-4 bg-slate-50 border-b flex flex-wrap gap-3">
+                <Link 
+                  to={`/chat/room_${doctorUid}_${selectedPatient.id}?name=${encodeURIComponent(selectedPatient.displayName || 'Patient')}`}
+                  className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                >
+                  <MessageSquare className="h-4 w-4" /> Message Patient
+                </Link>
+                
+                <label className="cursor-pointer bg-white border border-slate-300 text-slate-700 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
+                  <Upload className="h-4 w-4" /> {isUploading ? 'Uploading...' : 'Add Report'}
+                  <input type="file" className="hidden" onChange={(e) => handleFileUploadForPatient(e, selectedPatient.id, selectedPatient.displayName)} disabled={isUploading} />
+                </label>
+
+                <button 
+                  onClick={() => unassignPatient(selectedPatient.id)}
+                  className="ml-auto text-red-600 hover:bg-red-50 px-4 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center gap-2"
+                >
+                  <UserMinus className="h-4 w-4" /> Release
+                </button>
+              </div>
+
+              <div className="p-6 flex-1">
+                <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-indigo-600" /> Patient Records
+                </h3>
+                <div className="grid grid-cols-1 gap-3">
+                  {patientReports.map(report => (
+                    <div key={report.id} className="flex items-center justify-between p-4 border border-slate-100 rounded-2xl bg-slate-50 hover:bg-slate-100 transition-all">
+                      <div className="flex items-center gap-3">
+                        <Clipboard className="h-5 w-5 text-slate-400" />
+                        <div>
+                          <p className="font-bold text-sm text-slate-900">{report.name}</p>
+                          <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                            {report.uploadedBy === 'doctor' ? 'Added by you' : 'Added by patient'}
+                          </p>
+                        </div>
+                      </div>
+                      <Link to={`/document/${report.id}?role=doctor`} className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold hover:bg-indigo-50 hover:text-indigo-600 transition-colors shadow-sm">
+                        Review
+                      </Link>
+                    </div>
+                  ))}
+                  {patientReports.length === 0 && <p className="text-sm text-slate-400 italic">No records found.</p>}
                 </div>
               </div>
             </div>
-
-            <div className="flex gap-3 w-full md:w-auto">
-              <Link 
-                to={`/document/${report.id}?role=doctor`} 
-                className="flex-1 md:flex-none text-center px-8 py-3.5 border border-slate-200 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-colors"
-              >
-                Review
-              </Link>
-              <Link 
-                to={`/chat/room_doctor_uid_here_${report.patientId}?role=doctor&name=${encodeURIComponent(report.patientName)}`} 
-                className="flex-1 md:flex-none text-center px-8 py-3.5 bg-indigo-600 text-white rounded-2xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-100"
-              >
-                <MessageSquare className="h-4 w-4" /> Chat
-              </Link>
-            </div>
-          </div>
-        ))}
+          ) : (
+            <>
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <Activity className="h-5 w-5 text-indigo-600" /> Master Clinical Queue
+              </h2>
+              <div className="grid grid-cols-1 gap-4">
+                {reports.map((report) => (
+                  <div key={report.id} className="bg-white p-6 rounded-3xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-lg transition-all">
+                    <div className="flex items-center gap-5 w-full">
+                      <div className="h-14 w-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-indigo-100">
+                        {report.patientName?.charAt(0) || 'P'}
+                      </div>
+                      <div>
+                        <p className="font-bold text-lg text-slate-900">{report.patientName}</p>
+                        <p className="text-xs text-slate-500 flex items-center gap-1 font-medium">
+                          <Clipboard className="h-3 w-3" /> {report.name}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 w-full md:w-auto">
+                      <Link 
+                        to={`/document/${report.id}?role=doctor`} 
+                        className="flex-1 md:flex-none text-center px-6 py-3 border border-slate-200 rounded-xl text-xs font-bold hover:bg-slate-50"
+                      >
+                        Review
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+                {reports.length === 0 && (
+                  <div className="bg-white p-10 rounded-3xl border border-dashed border-slate-300 text-center">
+                    <p className="text-slate-500 font-medium">Your clinical queue is clear.</p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
