@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom'; // Combined imports
-import { MessageSquare, FileText, UserPlus, Activity, Users, Clipboard, Upload, UserMinus, X, Loader2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { MessageSquare, FileText, UserPlus, Activity, Users, Clipboard, Upload, UserMinus, X, Loader2, Trash2 } from 'lucide-react'; // Added Trash2
 import { db, auth } from '../routes/firebase';
-import { 
-  collection, query, onSnapshot, where, doc, 
-  updateDoc, addDoc, serverTimestamp 
+import {
+  collection, query, onSnapshot, where, doc,
+  updateDoc, addDoc, serverTimestamp, deleteDoc // Added deleteDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -14,8 +14,7 @@ export default function DoctorDashboard() {
   const [myPatients, setMyPatients] = useState<any[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  
-  // New states for refresh persistence
+
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -30,28 +29,24 @@ export default function DoctorDashboard() {
 
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // 1. Listen to Doctor's own profile
         unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
           setUserData(docSnap.data());
         });
 
-        // 2. Get ALL reports assigned to this doctor
         const qDocs = query(collection(db, "documents"), where("doctorId", "==", user.uid));
         unsubDocs = onSnapshot(qDocs, (snap) => {
           const sortedDocs = snap.docs
             .map(d => ({ id: d.id, ...d.data() }))
             .sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
           setReports(sortedDocs);
-          setLoading(false); // Data is starting to arrive
+          setLoading(false);
         });
 
-        // 3. Get unassigned patients
         const qUnassigned = query(collection(db, "users"), where("role", "==", "patient"), where("assignedDoctorId", "==", null));
         unsubUnassigned = onSnapshot(qUnassigned, (snap) => {
           setUnassignedPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
 
-        // 4. Get my patients
         const qMyPatients = query(collection(db, "users"), where("assignedDoctorId", "==", user.uid));
         unsubMyPatients = onSnapshot(qMyPatients, (snap) => {
           setMyPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -72,6 +67,18 @@ export default function DoctorDashboard() {
   }, [navigate]);
 
   // --- ACTIONS ---
+
+  // NEW: Delete Function
+  const handleDeleteReport = async (reportId: string) => {
+    if (!window.confirm("Are you sure you want to permanently delete this record?")) return;
+
+    try {
+      await deleteDoc(doc(db, "documents", reportId));
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert("Failed to delete the document.");
+    }
+  };
 
   const claimPatient = async (patientId: string) => {
     if (!doctorUid) return;
@@ -94,7 +101,7 @@ export default function DoctorDashboard() {
     const file = e.target.files?.[0];
     if (!file || !doctorUid) return;
     setIsUploading(true);
-    
+
     await addDoc(collection(db, "documents"), {
       name: file.name,
       patientId: patientId,
@@ -104,7 +111,7 @@ export default function DoctorDashboard() {
       createdAt: serverTimestamp(),
       uploadedBy: 'doctor'
     });
-    
+
     setIsUploading(false);
   };
 
@@ -117,12 +124,11 @@ export default function DoctorDashboard() {
     );
   }
 
-  // Filter reports for the detail view
   const patientReports = reports.filter(r => r.patientId === selectedPatient?.id);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Discovery Section */}
+      {/* ... Discovery Section ... */}
       {unassignedPatients.length > 0 && (
         <section className="bg-amber-50/80 p-6 rounded-[2rem] border border-amber-200 shadow-sm">
           <h2 className="text-sm font-black text-amber-800 uppercase tracking-widest flex items-center gap-2 mb-4">
@@ -132,8 +138,8 @@ export default function DoctorDashboard() {
             {unassignedPatients.map(p => (
               <div key={p.id} className="bg-white px-5 py-3 rounded-2xl border border-amber-200 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
                 <span className="font-bold text-slate-900">{p.displayName || p.email}</span>
-                <button 
-                  onClick={() => claimPatient(p.id)} 
+                <button
+                  onClick={() => claimPatient(p.id)}
                   className="bg-amber-600 text-white text-[10px] px-4 py-2 rounded-lg font-black uppercase hover:bg-amber-700 transition-colors"
                 >
                   Claim
@@ -153,8 +159,8 @@ export default function DoctorDashboard() {
           <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
             <div className="divide-y divide-slate-100">
               {myPatients.map(p => (
-                <div 
-                  key={p.id} 
+                <div
+                  key={p.id}
                   onClick={() => setSelectedPatient(p)}
                   className={`p-5 cursor-pointer transition-all flex items-center justify-between ${selectedPatient?.id === p.id ? 'bg-indigo-50 border-l-4 border-indigo-600' : 'hover:bg-slate-50 border-l-4 border-transparent'}`}
                 >
@@ -166,14 +172,11 @@ export default function DoctorDashboard() {
                   </div>
                 </div>
               ))}
-              {myPatients.length === 0 && (
-                <p className="p-10 text-center text-slate-400 text-sm italic">No patients claimed yet.</p>
-              )}
             </div>
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Dynamic Content Area */}
+        {/* RIGHT COLUMN */}
         <div className="lg:col-span-2 space-y-6">
           {selectedPatient ? (
             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
@@ -188,19 +191,19 @@ export default function DoctorDashboard() {
               </div>
 
               <div className="p-4 bg-slate-50 border-b flex flex-wrap gap-3">
-                <Link 
+                <Link
                   to={`/chat/room_${doctorUid}_${selectedPatient.id}?name=${encodeURIComponent(selectedPatient.displayName || 'Patient')}`}
                   className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2"
                 >
-                  <MessageSquare className="h-4 w-4" /> Message Patient
+                  <MessageSquare className="h-4 w-4" /> Message
                 </Link>
-                
+
                 <label className="cursor-pointer bg-white border border-slate-300 text-slate-700 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
                   <Upload className="h-4 w-4" /> {isUploading ? 'Uploading...' : 'Add Report'}
                   <input type="file" className="hidden" onChange={(e) => handleFileUploadForPatient(e, selectedPatient.id, selectedPatient.displayName)} disabled={isUploading} />
                 </label>
 
-                <button 
+                <button
                   onClick={() => unassignPatient(selectedPatient.id)}
                   className="ml-auto text-red-600 hover:bg-red-50 px-4 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center gap-2"
                 >
@@ -224,19 +227,27 @@ export default function DoctorDashboard() {
                           </p>
                         </div>
                       </div>
-                      <Link to={`/document/${report.id}?role=doctor`} className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold hover:bg-indigo-50 hover:text-indigo-600 transition-colors shadow-sm">
-                        Review
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link to={`/document/${report.id}?role=doctor`} className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold hover:bg-indigo-50 hover:text-indigo-600 transition-colors shadow-sm">
+                          Review
+                        </Link>
+                        {/* DELETE BUTTON: Detail View */}
+                        <button
+                          onClick={() => handleDeleteReport(report.id)}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   ))}
-                  {patientReports.length === 0 && <p className="text-sm text-slate-400 italic">No records found.</p>}
                 </div>
               </div>
             </div>
           ) : (
             <>
               <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <Activity className="h-5 w-5 text-indigo-600" /> Master Clinical Queue
+                <Activity className="h-5 w-5 text-indigo-600" /> Patient Files
               </h2>
               <div className="grid grid-cols-1 gap-4">
                 {reports.map((report) => (
@@ -253,20 +264,22 @@ export default function DoctorDashboard() {
                       </div>
                     </div>
                     <div className="flex gap-2 w-full md:w-auto">
-                      <Link 
-                        to={`/document/${report.id}?role=doctor`} 
+                      <Link
+                        to={`/document/${report.id}?role=doctor`}
                         className="flex-1 md:flex-none text-center px-6 py-3 border border-slate-200 rounded-xl text-xs font-bold hover:bg-slate-50"
                       >
                         Review
                       </Link>
+                      {/* DELETE BUTTON: Queue View */}
+                      <button
+                        onClick={() => handleDeleteReport(report.id)}
+                        className="p-3 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
                 ))}
-                {reports.length === 0 && (
-                  <div className="bg-white p-10 rounded-3xl border border-dashed border-slate-300 text-center">
-                    <p className="text-slate-500 font-medium">Your clinical queue is clear.</p>
-                  </div>
-                )}
               </div>
             </>
           )}

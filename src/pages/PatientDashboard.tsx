@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Upload, File, MessageSquare, Stethoscope, ShieldCheck, Activity, Loader2, Clipboard } from 'lucide-react';
+import { Upload, File, MessageSquare, Stethoscope, ShieldCheck, Activity, Loader2, Clipboard, Trash2 } from 'lucide-react';
 import { auth, db } from '../routes/firebase';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, deleteDoc } from 'firebase/firestore'; // Added deleteDoc
 import { onAuthStateChanged } from 'firebase/auth';
 
 export default function PatientDashboard() {
@@ -16,32 +16,25 @@ export default function PatientDashboard() {
     let unsubUser: () => void;
     let unsubDocs: () => void;
 
-    // The key fix: Wrap EVERYTHING in the Auth state listener
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // 1. Listen to User Data (to get assigned doctor info)
         unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
           setUserData(docSnap.data());
-          // We set loading to false here because we need user data to show the header
-          setLoading(false); 
+          setLoading(false);
         });
 
-        // 2. Listen to Documents (Only those belonging to this patient)
         const q = query(collection(db, "documents"), where("patientId", "==", user.uid));
         unsubDocs = onSnapshot(q, (snapshot) => {
           const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          // Sort by newest first
           docs.sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
           setDocuments(docs);
         });
       } else {
-        // No user found, kick them to login
         navigate('/login');
       }
     });
 
-    // Cleanup all 3 listeners
-    return () => { 
+    return () => {
       unsubAuth();
       if (unsubUser) unsubUser();
       if (unsubDocs) unsubDocs();
@@ -50,16 +43,15 @@ export default function PatientDashboard() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    const user = auth.currentUser; // Get fresh user instance
+    const user = auth.currentUser;
     if (!file || !user) return;
     setIsUploading(true);
-    
+
     try {
       await addDoc(collection(db, "documents"), {
         name: file.name,
         patientId: user.uid,
         patientName: userData?.displayName || user.email?.split('@')[0],
-        // Link to doctor if one is assigned, so it hits their specific queue
         doctorId: userData?.assignedDoctorId || null,
         status: 'Ready',
         uploadedBy: 'patient',
@@ -69,6 +61,18 @@ export default function PatientDashboard() {
       console.error("Upload failed:", err);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  // --- NEW DELETE FUNCTION ---
+  const handleDeleteDocument = async (docId: string) => {
+    if (!window.confirm("Are you sure you want to delete this record? This cannot be undone.")) return;
+
+    try {
+      await deleteDoc(doc(db, "documents", docId));
+    } catch (err) {
+      console.error("Failed to delete document:", err);
+      alert("Could not delete the document. Please try again.");
     }
   };
 
@@ -83,10 +87,10 @@ export default function PatientDashboard() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Care Status Card */}
+      {/* ... (Care Status Card and Upload Block remain exactly the same) ... */}
       <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
-        
+
         <div className="flex items-center gap-5 z-10">
           <div className="bg-indigo-500/20 p-4 rounded-2xl border border-indigo-500/30 shadow-inner">
             <Stethoscope className="text-indigo-400 h-8 w-8" />
@@ -103,7 +107,7 @@ export default function PatientDashboard() {
         </div>
 
         {userData?.assignedDoctorId && (
-          <Link 
+          <Link
             to={`/chat/room_${userData.assignedDoctorId}_${auth.currentUser?.uid}?name=${encodeURIComponent(userData?.assignedDoctorName || 'Doctor')}`}
             className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-4 rounded-2xl font-bold transition-all text-center flex items-center justify-center gap-3 shadow-lg active:scale-95"
           >
@@ -113,14 +117,13 @@ export default function PatientDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Upload Block */}
         <div className="bg-white p-10 rounded-[2.5rem] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group relative">
           <div className="bg-indigo-50 p-5 rounded-3xl mb-4 group-hover:scale-110 transition-transform shadow-sm">
             <Upload className="h-8 w-8 text-indigo-600" />
           </div>
           <h3 className="font-bold text-slate-900 text-lg">Add Medical Record</h3>
           <p className="text-sm text-slate-400 mb-6 max-w-[200px]">Upload lab results, X-rays, or clinical notes.</p>
-          
+
           <label className={`cursor-pointer px-8 py-3 rounded-xl font-bold text-sm transition-all flex items-center gap-2 ${
             isUploading ? 'bg-slate-200 text-slate-500' : 'bg-slate-900 text-white hover:bg-slate-800 shadow-md'
           }`}>
@@ -144,7 +147,7 @@ export default function PatientDashboard() {
           <div className="divide-y divide-slate-100 flex-1">
             {documents.map((doc) => (
               <div key={doc.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                <Link to={`/document/${doc.id}?role=patient`} className="flex items-center gap-4">
+                <Link to={`/document/${doc.id}?role=patient`} className="flex items-center gap-4 flex-1">
                   <div className="p-3 bg-slate-100 rounded-xl text-slate-500 group-hover:text-indigo-600">
                     <Clipboard className="h-5 w-5" />
                   </div>
@@ -162,6 +165,16 @@ export default function PatientDashboard() {
                   <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full uppercase">
                     Ready
                   </span>
+
+                  {/* NEW DELETE BUTTON */}
+                  <button
+                    onClick={() => handleDeleteDocument(doc.id)}
+                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Delete Record"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+
                 </div>
               </div>
             ))}
