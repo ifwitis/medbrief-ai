@@ -8,14 +8,14 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
-import { 
-  FileText, Settings, Languages, CheckCircle, 
+import {
+  FileText, Settings, Languages, CheckCircle,
   AlertCircle, MessageSquare, Pill, Activity, Calendar,
   ShieldAlert, ClipboardCheck, Info
 } from 'lucide-react';
 
 // Use the interfaces we defined earlier
-import { StructuredData, TranslationOptions } from '../types';
+import { DocumentResult, TranslationConfig } from '../types';
 
 export default function DocumentView() {
   const { id } = useParams();
@@ -26,7 +26,7 @@ export default function DocumentView() {
   const [pageNumber, setPageNumber] = useState(1);
   const location = useLocation();
 
-  const [options, setOptions] = useState<TranslationOptions>({
+  const [options, setOptions] = useState<TranslationConfig>({
     language: 'English',
     difficulty: 'layman',
     detailLevel: 'summary'
@@ -91,7 +91,7 @@ export default function DocumentView() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-      
+
       {/* LEFT: VISUAL TRANSLATION VIEW (7 Columns) */}
       <div className="lg:col-span-7 space-y-6">
         <div className="flex items-center justify-between">
@@ -100,7 +100,7 @@ export default function DocumentView() {
             <p className="text-slate-500 text-sm">Mapping facts from original layout</p>
           </div>
           <div className="flex gap-2">
-            <select 
+            <select
               className="text-sm border-slate-200 rounded-lg focus:ring-indigo-500"
               value={options.language}
               onChange={(e) => setOptions({...options, language: e.target.value})}
@@ -111,11 +111,11 @@ export default function DocumentView() {
             </select>
           </div>
         </div>
-        
+
         <div className="lg:col-span-7 space-y-4">
           {/* 1. SIMPLE HEADER CONTROLS */}
           <div className="flex items-center justify-between bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
-            <button 
+            <button
               onClick={() => setPageNumber(p => Math.max(p - 1, 1))}
               disabled={pageNumber === 1}
               className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 disabled:text-slate-300 transition-colors"
@@ -127,7 +127,7 @@ export default function DocumentView() {
               Page <span className="text-slate-900">{pageNumber}</span> of {numPages}
             </span>
 
-            <button 
+            <button
               onClick={() => setPageNumber(p => Math.min(p + 1, numPages))}
               disabled={pageNumber === numPages}
               className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 disabled:text-slate-300 transition-colors"
@@ -137,8 +137,8 @@ export default function DocumentView() {
           </div>
 
           {/* 2. PDF CONTAINER */}
-          <div 
-            ref={containerRef} 
+          <div
+            ref={containerRef}
             className="bg-slate-100 rounded-2xl border border-slate-200 flex justify-center p-4 min-h-[800px]"
           >
             <div className="shadow-xl bg-white">
@@ -146,9 +146,9 @@ export default function DocumentView() {
                 file={location.state?.fileUrl || `/api/documents/${id}/file`}
                 onLoadSuccess={({ numPages }) => setNumPages(numPages)}
               >
-                <Page 
-                  pageNumber={pageNumber} 
-                  width={containerWidth} 
+                <Page
+                  pageNumber={pageNumber}
+                  width={containerWidth}
                   renderTextLayer={false}
                   renderAnnotationLayer={false}
                 />
@@ -160,7 +160,7 @@ export default function DocumentView() {
 
       {/* RIGHT: STRUCTURED INSIGHTS (5 Columns) */}
       <div className="lg:col-span-5 space-y-6">
-        
+
         {/* 1. CAREGIVER SUMMARY PILLARS */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="bg-indigo-600 px-4 py-3">
