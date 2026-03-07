@@ -24,7 +24,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="flex justify-between h-16 items-center">
             <div className="flex items-center gap-2">
               <Activity className="h-6 w-6 text-indigo-600" />
-              <span className="font-semibold text-xl tracking-tight">MedConnect AI</span>
+              <span className="font-semibold text-xl tracking-tight">MedBrief AI</span>
             </div>
             <nav className="flex gap-4">
               {navItems.map((item) => {
@@ -37,8 +37,8 @@ export default function Layout({ children }: { children: ReactNode }) {
                     to={item.path}
                     className={cn(
                       "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                      isActive 
-                        ? "bg-indigo-50 text-indigo-700" 
+                      isActive
+                        ? "bg-indigo-50 text-indigo-700"
                         : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                     )}
                   >

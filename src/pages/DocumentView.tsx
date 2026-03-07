@@ -7,7 +7,7 @@ export default function DocumentView() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const role = searchParams.get('role') || 'patient';
-  
+
   const [options, setOptions] = useState<TranslationOptions>({
     language: 'English',
     difficulty: 'layman',
@@ -47,7 +47,7 @@ export default function DocumentView() {
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-center">
           <div className="flex items-center gap-2">
             <Languages className="h-5 w-5 text-slate-400" />
-            <select 
+            <select
               className="text-sm border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
               value={options.language}
               onChange={(e) => setOptions({...options, language: e.target.value})}
@@ -57,10 +57,10 @@ export default function DocumentView() {
               <option>Chinese</option>
             </select>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <Settings className="h-5 w-5 text-slate-400" />
-            <select 
+            <select
               className="text-sm border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
               value={options.difficulty}
               onChange={(e) => setOptions({...options, difficulty: e.target.value as any})}
@@ -72,7 +72,7 @@ export default function DocumentView() {
 
           <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-slate-400" />
-            <select 
+            <select
               className="text-sm border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
               value={options.detailLevel}
               onChange={(e) => setOptions({...options, detailLevel: e.target.value as any})}
@@ -150,7 +150,7 @@ export default function DocumentView() {
           </div>
           <div className="p-4">
             {role === 'doctor' ? (
-              <textarea 
+              <textarea
                 className="w-full text-sm rounded-xl border-indigo-200 focus:ring-indigo-500 focus:border-indigo-500 p-3 h-32"
                 defaultValue="- Schedule follow-up for blood pressure monitoring.&#10;- Start Vitamin D supplement (2000 IU daily)."
               />
