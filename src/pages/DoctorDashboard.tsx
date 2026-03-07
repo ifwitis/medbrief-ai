@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MessageSquare, FileText, UserPlus, Activity, Users, Clipboard, Upload, UserMinus, X, Loader2, Copy, Search, Globe } from 'lucide-react';
+import { 
+  MessageSquare, FileText, UserPlus, Activity, Users, 
+  Clipboard, Upload, UserMinus, X, Loader2, Copy, Search, Globe, Trash2 
+} from 'lucide-react';
 import { db, auth } from '../routes/firebase';
-import { collection, query, onSnapshot, where, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { 
+  collection, query, onSnapshot, where, doc, 
+  updateDoc, addDoc, deleteDoc, serverTimestamp 
+} from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
 export default function DoctorDashboard() {
@@ -19,6 +25,19 @@ export default function DoctorDashboard() {
   const navigate = useNavigate();
 
   const doctorUid = auth.currentUser?.uid;
+
+  // --- DELETE LOGIC ---
+  const handleDeleteReport = async (reportId: string) => {
+    if (!window.confirm("Are you sure you want to permanently delete this report?")) return;
+    
+    try {
+      await deleteDoc(doc(db, "documents", reportId));
+      // No need to manually update state, onSnapshot handles the real-time sync
+    } catch (error) {
+      console.error("Error deleting document:", error);
+      alert("Failed to delete report. Please try again.");
+    }
+  };
 
   useEffect(() => {
     let unsubDocs: () => void;
@@ -42,22 +61,19 @@ export default function DoctorDashboard() {
           setLoading(false); 
         });
 
-        // 3. Get patients who requested THIS doctor (and are not yet assigned)
         const qRequests = query(collection(db, "users"), where("role", "==", "patient"), where("requestedDoctorIds", "array-contains", user.uid));
         unsubRequests = onSnapshot(qRequests, (snap) => {
           const pendingRequests = snap.docs
             .map(d => ({ id: d.id, ...d.data() }))
-            .filter((p: any) => !p.assignedDoctorId); // Filter locally
+            .filter((p: any) => !p.assignedDoctorId);
           setUnassignedPatients(pendingRequests);
         });
 
-        // 4. Get my claimed patients (1-to-1)
         const qMyPatients = query(collection(db, "users"), where("assignedDoctorId", "==", user.uid));
         unsubMyPatients = onSnapshot(qMyPatients, (snap) => {
           setMyPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
 
-        // 5. Get ALL patients for the override directory
         const qAllPatients = query(collection(db, "users"), where("role", "==", "patient"));
         unsubAllPatients = onSnapshot(qAllPatients, (snap) => {
           setAllPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -78,13 +94,12 @@ export default function DoctorDashboard() {
     };
   }, [navigate]);
 
-  // CLAIM LOGIC: Creates 1-to-1 link and ERASES requests so no one else can claim
   const claimPatient = async (patientId: string) => {
     if (!doctorUid) return;
     await updateDoc(doc(db, "users", patientId), {
       assignedDoctorId: doctorUid,
       assignedDoctorName: userData?.displayName || "Dr. Specialist",
-      requestedDoctorIds: [] // Wipe out requests, they are taken!
+      requestedDoctorIds: [] 
     });
     setSearchTerm(""); 
   };
@@ -126,8 +141,6 @@ export default function DoctorDashboard() {
   }
 
   const patientReports = reports.filter(r => r.patientId === selectedPatient?.id);
-  
-  // DIRECTORY FILTER: Only show patients that have NO assigned doctor
   const discoverablePatients = allPatients.filter(p => {
     const isUnassigned = !p.assignedDoctorId;
     const matchesSearch = searchTerm === "" || 
@@ -158,7 +171,7 @@ export default function DoctorDashboard() {
         </div>
       </div>
 
-      {/* Discovery Section - Pending Requests */}
+      {/* Discovery Section */}
       {unassignedPatients.length > 0 && (
         <section className="bg-amber-50/80 p-6 rounded-[2rem] border border-amber-200 shadow-sm">
           <h2 className="text-sm font-black text-amber-800 uppercase tracking-widest flex items-center gap-2 mb-4">
@@ -211,7 +224,7 @@ export default function DoctorDashboard() {
             </div>
           </div>
 
-          {/* Global Patient Directory */}
+          {/* Directory */}
           <div className="space-y-4">
             <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <Globe className="h-5 w-5 text-emerald-600" /> Patient Directory
@@ -243,13 +256,9 @@ export default function DoctorDashboard() {
                     </button>
                   </div>
                 ))}
-                {discoverablePatients.length === 0 && (
-                  <p className="py-4 text-center text-slate-400 text-xs italic">No patients match your search.</p>
-                )}
               </div>
             </div>
           </div>
-
         </div>
 
         {/* RIGHT COLUMN */}
@@ -307,7 +316,6 @@ export default function DoctorDashboard() {
                         <Link to={`/document/${report.id}?role=doctor`} className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold hover:bg-indigo-50 hover:text-indigo-600 transition-colors shadow-sm">
                           Review
                         </Link>
-                        {/* DELETE BUTTON: Detail View */}
                         <button
                           onClick={() => handleDeleteReport(report.id)}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -323,7 +331,7 @@ export default function DoctorDashboard() {
           ) : (
             <>
               <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <Activity className="h-5 w-5 text-indigo-600" /> Patient Files
+                <Activity className="h-5 w-5 text-indigo-600" /> All Patient Files
               </h2>
               <div className="grid grid-cols-1 gap-4">
                 {reports.map((report) => (
@@ -346,7 +354,6 @@ export default function DoctorDashboard() {
                       >
                         Review
                       </Link>
-                      {/* DELETE BUTTON: Queue View */}
                       <button
                         onClick={() => handleDeleteReport(report.id)}
                         className="p-3 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-colors"

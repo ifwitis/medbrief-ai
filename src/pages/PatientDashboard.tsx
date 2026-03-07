@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Upload, File, MessageSquare, Stethoscope, ShieldCheck, Activity, Loader2, Clipboard, UserPlus } from 'lucide-react';
+import { 
+  Upload, File, MessageSquare, Stethoscope, ShieldCheck, 
+  Activity, Loader2, Clipboard, UserPlus, Trash2 
+} from 'lucide-react';
 import { auth, db } from '../routes/firebase';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { 
+  collection, addDoc, query, where, onSnapshot, 
+  serverTimestamp, doc, updateDoc, arrayUnion, deleteDoc 
+} from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
 export default function PatientDashboard() {
@@ -17,6 +23,18 @@ export default function PatientDashboard() {
   
   const navigate = useNavigate();
 
+  // --- DELETE LOGIC ---
+  const handleDeleteDocument = async (docId: string) => {
+    if (!window.confirm("Are you sure you want to delete this medical record? This cannot be undone.")) return;
+    
+    try {
+      await deleteDoc(doc(db, "documents", docId));
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert("Failed to delete the document.");
+    }
+  };
+
   useEffect(() => {
     let unsubUser: () => void;
     let unsubDocs: () => void;
@@ -24,13 +42,11 @@ export default function PatientDashboard() {
 
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // 1. Listen to User Data
         unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
           setUserData(docSnap.data());
           setLoading(false); 
         });
 
-        // 2. Listen to Documents
         const qDocs = query(collection(db, "documents"), where("patientId", "==", user.uid));
         unsubDocs = onSnapshot(qDocs, (snapshot) => {
           const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -38,7 +54,6 @@ export default function PatientDashboard() {
           setDocuments(docs);
         });
 
-        // 3. Fetch all doctors for the dropdown
         const qDoctors = query(collection(db, "users"), where("role", "==", "doctor"));
         unsubDoctors = onSnapshot(qDoctors, (snapshot) => {
           setAllDoctors(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -68,7 +83,7 @@ export default function PatientDashboard() {
         name: file.name,
         patientId: user.uid,
         patientName: userData?.displayName || user.email?.split('@')[0],
-        doctorId: userData?.assignedDoctorId || null, // 1-to-1 doctor link
+        doctorId: userData?.assignedDoctorId || null,
         status: 'Ready',
         uploadedBy: 'patient',
         createdAt: serverTimestamp(),
@@ -115,7 +130,6 @@ export default function PatientDashboard() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       
-      {/* Personalized Greeting */}
       <div className="pt-2 pb-4">
         <h1 className="text-3xl font-black text-slate-900 tracking-tight">
           Hello, {userData?.displayName || userData?.email?.split('@')[0] || "Patient"} 👋
@@ -125,7 +139,6 @@ export default function PatientDashboard() {
         </p>
       </div>
 
-      {/* Care Status Card */}
       <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
 
@@ -144,7 +157,6 @@ export default function PatientDashboard() {
           </div>
         </div>
 
-        {/* This is the Chat Button. It only shows if a doctor has claimed the patient */}
         {userData?.assignedDoctorId && (
           <Link
             to={`/chat/room_${userData.assignedDoctorId}_${auth.currentUser?.uid}?name=${encodeURIComponent(userData?.assignedDoctorName || 'Doctor')}`}
@@ -155,7 +167,6 @@ export default function PatientDashboard() {
         )}
       </div>
 
-      {/* Doctor Request Dropdown - Disappears once claimed */}
       {!userData?.assignedDoctorId && (
         <div className="bg-indigo-50/50 p-6 rounded-[2.5rem] border border-indigo-100 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
           <div>
@@ -194,14 +205,13 @@ export default function PatientDashboard() {
         </div>
       )}
 
-      {/* Upload and History Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="bg-white p-10 rounded-[2.5rem] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group relative">
           <div className="bg-indigo-50 p-5 rounded-3xl mb-4 group-hover:scale-110 transition-transform shadow-sm">
             <Upload className="h-8 w-8 text-indigo-600" />
           </div>
           <h3 className="font-bold text-slate-900 text-lg">Add Medical Record</h3>
-          <p className="text-sm text-slate-400 mb-6 max-w-[200px]">Upload lab results, X-rays, or clinical notes.</p>
+          <p className="text-sm text-slate-400 mb-6 max-w-[200px]">Upload lab results or clinical notes.</p>
 
           <label className={`cursor-pointer px-8 py-3 rounded-xl font-bold text-sm transition-all flex items-center gap-2 ${
             isUploading ? 'bg-slate-200 text-slate-500' : 'bg-slate-900 text-white hover:bg-slate-800 shadow-md'
@@ -224,9 +234,9 @@ export default function PatientDashboard() {
 
           <div className="divide-y divide-slate-100 flex-1">
             {documents.map((doc) => (
-              <div key={doc.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors">
+              <div key={doc.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
                 <Link to={`/document/${doc.id}?role=patient`} className="flex items-center gap-4 flex-1">
-                  <div className="p-3 bg-slate-100 rounded-xl text-slate-500 group-hover:text-indigo-600">
+                  <div className="p-3 bg-slate-100 rounded-xl text-slate-500 group-hover:text-indigo-600 transition-colors">
                     <Clipboard className="h-5 w-5" />
                   </div>
                   <div>
@@ -244,15 +254,13 @@ export default function PatientDashboard() {
                     Ready
                   </span>
 
-                  {/* NEW DELETE BUTTON */}
                   <button
                     onClick={() => handleDeleteDocument(doc.id)}
-                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                     title="Delete Record"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
-
                 </div>
               </div>
             ))}
