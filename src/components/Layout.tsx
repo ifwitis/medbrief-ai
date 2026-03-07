@@ -57,7 +57,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
               <Activity className="h-6 w-6 text-indigo-600" />
-              <span className="font-bold text-xl tracking-tight">MedConnect <span className="text-indigo-600">AI</span></span>
+              <span className="font-bold text-xl tracking-tight">MedBrief <span className="text-indigo-600">AI</span></span>
             </Link>
 
             {/* Smart Navigation */}

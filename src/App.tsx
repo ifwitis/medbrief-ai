@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Login from './pages/Login'; // Add this import
-import Signup from './pages/Signup';
+import Signup from './pages/SignUp'; // Add this import
 import PatientDashboard from './pages/PatientDashboard';
 import DoctorDashboard from './pages/DoctorDashboard';
 import DocumentView from './pages/DocumentView';
