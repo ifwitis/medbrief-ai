@@ -9,10 +9,10 @@ export default function Home() {
           Understand your medical reports with <span className="text-indigo-600">AI</span>
         </h1>
         <p className="text-lg leading-8 text-slate-600">
-          MedConnect AI bridges the gap between complex medical jargon and patient understanding. 
+          MedBrief AI bridges the gap between complex medical jargon and patient understanding.
           Upload your reports, get clear summaries, and communicate effectively with your doctor.
         </p>
-        
+
         <div className="flex justify-center gap-4 pt-4">
           <Link
             to="/patient"
