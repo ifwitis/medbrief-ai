@@ -1,98 +1,66 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, FileText, CheckCircle, AlertCircle } from 'lucide-react';
-import { Patient } from '../types';
+import { MessageSquare, FileText, User, Bell } from 'lucide-react';
+import { db } from '../routes/firebase';
+import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 
 export default function DoctorDashboard() {
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const [reports, setReports] = useState<any[]>([]);
 
   useEffect(() => {
-    // Fetch mock patients
-    fetch('/api/doctors/d1/dashboard')
-      .then(res => res.json())
-      .then(data => setPatients(data.patients || []))
-      .catch(err => console.error("Failed to fetch patients", err));
+    // Ordering by creation time so newest patients are at the top
+    const q = query(collection(db, "documents"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setReports(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
   }, []);
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Doctor Dashboard</h1>
-        <p className="text-slate-500 mt-1">Review patient documents and refine AI recommendations.</p>
-      </div>
-
-      {/* Overview Stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="bg-white overflow-hidden rounded-2xl shadow-sm border border-slate-200 px-4 py-5 sm:p-6">
-          <dt className="truncate text-sm font-medium text-slate-500">Total Patients</dt>
-          <dd className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 flex items-center gap-2">
-            <Users className="h-6 w-6 text-indigo-500" />
-            {patients.length}
-          </dd>
+    <div className="p-6 max-w-7xl mx-auto space-y-8">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Clinical Queue</h1>
+          <p className="text-slate-500 mt-1">Review active patient submissions and provide AI-assisted clarity.</p>
         </div>
-        <div className="bg-white overflow-hidden rounded-2xl shadow-sm border border-slate-200 px-4 py-5 sm:p-6">
-          <dt className="truncate text-sm font-medium text-slate-500">Pending Reviews</dt>
-          <dd className="mt-1 text-3xl font-semibold tracking-tight text-amber-600 flex items-center gap-2">
-            <AlertCircle className="h-6 w-6 text-amber-500" />
-            {patients.reduce((acc, p) => acc + p.pendingActions.length, 0)}
-          </dd>
-        </div>
-        <div className="bg-white overflow-hidden rounded-2xl shadow-sm border border-slate-200 px-4 py-5 sm:p-6">
-          <dt className="truncate text-sm font-medium text-slate-500">Approved Reports</dt>
-          <dd className="mt-1 text-3xl font-semibold tracking-tight text-emerald-600 flex items-center gap-2">
-            <CheckCircle className="h-6 w-6 text-emerald-500" />
-            12
-          </dd>
+        <div className="flex items-center gap-2 bg-amber-50 text-amber-700 px-4 py-2 rounded-xl border border-amber-100 font-bold text-sm">
+          <Bell className="h-4 w-4" /> {reports.length} Actions Required
         </div>
       </div>
+      
+      <div className="grid grid-cols-1 gap-4">
+        {reports.map((report) => (
+          <div key={report.id} className="bg-white p-6 rounded-3xl border border-slate-200 flex flex-col md:flex-row items-center justify-between shadow-sm gap-6 hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-5 w-full">
+              <div className="h-14 w-14 bg-gradient-to-tr from-indigo-600 to-indigo-500 rounded-2xl flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-indigo-100">
+                {report.patientName?.charAt(0)}
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-xl text-slate-900">{report.patientName}</p>
+                <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
+                  <span className="flex items-center gap-1 font-medium"><FileText className="h-4 w-4" /> {report.name}</span>
+                  <span className="text-slate-300">|</span>
+                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md uppercase tracking-wider">Awaiting Review</span>
+                </div>
+              </div>
+            </div>
 
-      {/* Patient List */}
-      <div>
-        <h2 className="text-lg font-semibold mb-4">Action Required</h2>
-        <div className="bg-white shadow-sm border border-slate-200 rounded-2xl overflow-hidden">
-          <ul className="divide-y divide-slate-100">
-            {patients.map((patient) => (
-              <li key={patient.id} className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold">
-                      {patient.name.charAt(0)}
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-medium text-slate-900">{patient.name}</h3>
-                      <p className="text-xs text-slate-500">ID: {patient.id}</p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="space-y-3">
-                  {patient.pendingActions.map((action, idx) => (
-                    <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-3">
-                        <FileText className="h-5 w-5 text-slate-400 mt-0.5" />
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">{action.action}</p>
-                          <p className="text-xs text-slate-500 mt-1">Document ID: {action.docId}</p>
-                        </div>
-                      </div>
-                      <Link
-                        to={`/document/${action.docId}?role=doctor`}
-                        className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50"
-                      >
-                        Review
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              </li>
-            ))}
-            {patients.length === 0 && (
-              <li className="p-8 text-center text-slate-500 text-sm">
-                No pending actions.
-              </li>
-            )}
-          </ul>
-        </div>
+            <div className="flex gap-3 w-full md:w-auto">
+              <Link 
+                to={`/document/${report.id}?role=doctor`} 
+                className="flex-1 md:flex-none text-center px-8 py-3.5 border border-slate-200 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-colors"
+              >
+                Review
+              </Link>
+              <Link 
+                to={`/chat/room_doctor_uid_here_${report.patientId}?role=doctor&name=${encodeURIComponent(report.patientName)}`} 
+                className="flex-1 md:flex-none text-center px-8 py-3.5 bg-indigo-600 text-white rounded-2xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-100"
+              >
+                <MessageSquare className="h-4 w-4" /> Chat
+              </Link>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
