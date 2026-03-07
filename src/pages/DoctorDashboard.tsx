@@ -1,55 +1,81 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MessageSquare, FileText, UserPlus, Activity, Users, Clipboard, Upload, UserMinus, X, Loader2, Trash2 } from 'lucide-react'; // Added Trash2
+import { MessageSquare, FileText, UserPlus, Activity, Users, Clipboard, Upload, UserMinus, X, Loader2, Trash2 } from 'lucide-react';
 import { db, auth } from '../routes/firebase';
 import {
   collection, query, onSnapshot, where, doc,
-  updateDoc, addDoc, serverTimestamp, deleteDoc // Added deleteDoc
+  updateDoc, deleteDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
+import { uploadDocument } from '../../server/services/uploadDocument';
+import type { MedicalDocument, TranslationConfig } from '../types';
+
+interface DoctorProfile {
+  displayName?: string;
+}
+
+interface PatientUser {
+  id: string;
+  displayName?: string;
+  email?: string;
+  assignedDoctorId?: string | null;
+  assignedDoctorName?: string | null;
+  role?: string;
+}
+
+const DEFAULT_OPTIONS: TranslationConfig = {
+  language: "English",
+  difficulty: "layman",
+  detailLevel: "summary",
+};
 
 export default function DoctorDashboard() {
-  const [reports, setReports] = useState<any[]>([]);
-  const [unassignedPatients, setUnassignedPatients] = useState<any[]>([]);
-  const [myPatients, setMyPatients] = useState<any[]>([]);
-  const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
+  const [reports, setReports] = useState<MedicalDocument[]>([]);
+  const [unassignedPatients, setUnassignedPatients] = useState<PatientUser[]>([]);
+  const [myPatients, setMyPatients] = useState<PatientUser[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<PatientUser | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-
-  const [userData, setUserData] = useState<any>(null);
+  const [userData, setUserData] = useState<DoctorProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   const doctorUid = auth.currentUser?.uid;
 
   useEffect(() => {
-    let unsubDocs: () => void;
-    let unsubUnassigned: () => void;
-    let unsubMyPatients: () => void;
-    let unsubUser: () => void;
+    let unsubDocs: (() => void) | undefined;
+    let unsubUnassigned: (() => void) | undefined;
+    let unsubMyPatients: (() => void) | undefined;
+    let unsubUser: (() => void) | undefined;
 
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
-          setUserData(docSnap.data());
+          setUserData((docSnap.data() as DoctorProfile) || null);
         });
 
         const qDocs = query(collection(db, "documents"), where("doctorId", "==", user.uid));
         unsubDocs = onSnapshot(qDocs, (snap) => {
           const sortedDocs = snap.docs
-            .map(d => ({ id: d.id, ...d.data() }))
-            .sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+            .map(d => ({ id: d.id, ...d.data() })) as MedicalDocument[];
+
+          sortedDocs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
           setReports(sortedDocs);
           setLoading(false);
         });
 
-        const qUnassigned = query(collection(db, "users"), where("role", "==", "patient"), where("assignedDoctorId", "==", null));
+        const qUnassigned = query(
+          collection(db, "users"),
+          where("role", "==", "patient"),
+          where("assignedDoctorId", "==", null)
+        );
+
         unsubUnassigned = onSnapshot(qUnassigned, (snap) => {
-          setUnassignedPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          setUnassignedPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })) as PatientUser[]);
         });
 
         const qMyPatients = query(collection(db, "users"), where("assignedDoctorId", "==", user.uid));
         unsubMyPatients = onSnapshot(qMyPatients, (snap) => {
-          setMyPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          setMyPatients(snap.docs.map(d => ({ id: d.id, ...d.data() })) as PatientUser[]);
         });
 
       } else {
@@ -59,16 +85,13 @@ export default function DoctorDashboard() {
 
     return () => {
       unsubAuth();
-      if (unsubDocs) unsubDocs();
-      if (unsubUnassigned) unsubUnassigned();
-      if (unsubMyPatients) unsubMyPatients();
-      if (unsubUser) unsubUser();
+      unsubDocs?.();
+      unsubUnassigned?.();
+      unsubMyPatients?.();
+      unsubUser?.();
     };
   }, [navigate]);
 
-  // --- ACTIONS ---
-
-  // NEW: Delete Function
   const handleDeleteReport = async (reportId: string) => {
     if (!window.confirm("Are you sure you want to permanently delete this record?")) return;
 
@@ -90,29 +113,43 @@ export default function DoctorDashboard() {
 
   const unassignPatient = async (patientId: string) => {
     if (!window.confirm("Are you sure you want to release this patient?")) return;
+
     await updateDoc(doc(db, "users", patientId), {
       assignedDoctorId: null,
       assignedDoctorName: null
     });
-    if (selectedPatient?.id === patientId) setSelectedPatient(null);
+
+    if (selectedPatient?.id === patientId) {
+      setSelectedPatient(null);
+    }
   };
 
-  const handleFileUploadForPatient = async (e: React.ChangeEvent<HTMLInputElement>, patientId: string, patientName: string) => {
+  const handleFileUploadForPatient = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    patientId: string,
+    patientName: string
+  ) => {
     const file = e.target.files?.[0];
     if (!file || !doctorUid) return;
+
     setIsUploading(true);
 
-    await addDoc(collection(db, "documents"), {
-      name: file.name,
-      patientId: patientId,
-      patientName: patientName,
-      doctorId: doctorUid,
-      status: 'Ready',
-      createdAt: serverTimestamp(),
-      uploadedBy: 'doctor'
-    });
-
-    setIsUploading(false);
+    try {
+      await uploadDocument({
+        file,
+        patientId,
+        patientName,
+        doctorId: doctorUid,
+        uploadedBy: "doctor",
+        options: DEFAULT_OPTIONS,
+      });
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert("Could not upload and process the document.");
+    } finally {
+      setIsUploading(false);
+      e.target.value = "";
+    }
   };
 
   if (loading) {
@@ -128,7 +165,6 @@ export default function DoctorDashboard() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* ... Discovery Section ... */}
       {unassignedPatients.length > 0 && (
         <section className="bg-amber-50/80 p-6 rounded-[2rem] border border-amber-200 shadow-sm">
           <h2 className="text-sm font-black text-amber-800 uppercase tracking-widest flex items-center gap-2 mb-4">
@@ -151,7 +187,6 @@ export default function DoctorDashboard() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* LEFT COLUMN: Patient List */}
         <div className="space-y-6">
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <Users className="h-5 w-5 text-indigo-600" /> My Care Team
@@ -162,10 +197,16 @@ export default function DoctorDashboard() {
                 <div
                   key={p.id}
                   onClick={() => setSelectedPatient(p)}
-                  className={`p-5 cursor-pointer transition-all flex items-center justify-between ${selectedPatient?.id === p.id ? 'bg-indigo-50 border-l-4 border-indigo-600' : 'hover:bg-slate-50 border-l-4 border-transparent'}`}
+                  className={`p-5 cursor-pointer transition-all flex items-center justify-between ${
+                    selectedPatient?.id === p.id
+                      ? 'bg-indigo-50 border-l-4 border-indigo-600'
+                      : 'hover:bg-slate-50 border-l-4 border-transparent'
+                  }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold capitalize ${selectedPatient?.id === p.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold capitalize ${
+                      selectedPatient?.id === p.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                    }`}>
                       {p.displayName?.charAt(0) || 'P'}
                     </div>
                     <span className="font-bold text-slate-800 text-sm">{p.displayName || p.email}</span>
@@ -176,7 +217,6 @@ export default function DoctorDashboard() {
           </div>
         </div>
 
-        {/* RIGHT COLUMN */}
         <div className="lg:col-span-2 space-y-6">
           {selectedPatient ? (
             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
@@ -200,7 +240,13 @@ export default function DoctorDashboard() {
 
                 <label className="cursor-pointer bg-white border border-slate-300 text-slate-700 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
                   <Upload className="h-4 w-4" /> {isUploading ? 'Uploading...' : 'Add Report'}
-                  <input type="file" className="hidden" onChange={(e) => handleFileUploadForPatient(e, selectedPatient.id, selectedPatient.displayName)} disabled={isUploading} />
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => handleFileUploadForPatient(e, selectedPatient.id, selectedPatient.displayName || selectedPatient.email || "Patient")}
+                    disabled={isUploading}
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                  />
                 </label>
 
                 <button
@@ -231,7 +277,6 @@ export default function DoctorDashboard() {
                         <Link to={`/document/${report.id}?role=doctor`} className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold hover:bg-indigo-50 hover:text-indigo-600 transition-colors shadow-sm">
                           Review
                         </Link>
-                        {/* DELETE BUTTON: Detail View */}
                         <button
                           onClick={() => handleDeleteReport(report.id)}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -270,7 +315,6 @@ export default function DoctorDashboard() {
                       >
                         Review
                       </Link>
-                      {/* DELETE BUTTON: Queue View */}
                       <button
                         onClick={() => handleDeleteReport(report.id)}
                         className="p-3 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-colors"

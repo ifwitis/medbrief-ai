@@ -2,31 +2,49 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Upload, File, MessageSquare, Stethoscope, ShieldCheck, Activity, Loader2, Clipboard, Trash2 } from 'lucide-react';
 import { auth, db } from '../routes/firebase';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, deleteDoc } from 'firebase/firestore'; // Added deleteDoc
+import { collection, query, where, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
+import { uploadDocument } from '../../server/services/uploadDocument';
+import type { MedicalDocument, TranslationConfig } from '../types';
+
+interface UserProfile {
+  displayName?: string;
+  assignedDoctorId?: string | null;
+  assignedDoctorName?: string | null;
+}
+
+const DEFAULT_OPTIONS: TranslationConfig = {
+  language: "English",
+  difficulty: "layman",
+  detailLevel: "summary",
+};
 
 export default function PatientDashboard() {
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<MedicalDocument[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [userData, setUserData] = useState<any>(null);
+  const [userData, setUserData] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    let unsubUser: () => void;
-    let unsubDocs: () => void;
+    let unsubUser: (() => void) | undefined;
+    let unsubDocs: (() => void) | undefined;
 
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
-          setUserData(docSnap.data());
+          setUserData((docSnap.data() as UserProfile) || null);
           setLoading(false);
         });
 
         const q = query(collection(db, "documents"), where("patientId", "==", user.uid));
         unsubDocs = onSnapshot(q, (snapshot) => {
-          const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          docs.sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+          const docs = snapshot.docs.map(d => ({
+            id: d.id,
+            ...d.data(),
+          })) as MedicalDocument[];
+
+          docs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
           setDocuments(docs);
         });
       } else {
@@ -36,8 +54,8 @@ export default function PatientDashboard() {
 
     return () => {
       unsubAuth();
-      if (unsubUser) unsubUser();
-      if (unsubDocs) unsubDocs();
+      unsubUser?.();
+      unsubDocs?.();
     };
   }, [navigate]);
 
@@ -45,26 +63,27 @@ export default function PatientDashboard() {
     const file = e.target.files?.[0];
     const user = auth.currentUser;
     if (!file || !user) return;
+
     setIsUploading(true);
 
     try {
-      await addDoc(collection(db, "documents"), {
-        name: file.name,
+      await uploadDocument({
+        file,
         patientId: user.uid,
-        patientName: userData?.displayName || user.email?.split('@')[0],
+        patientName: userData?.displayName || user.email?.split('@')[0] || "Patient",
         doctorId: userData?.assignedDoctorId || null,
-        status: 'Ready',
-        uploadedBy: 'patient',
-        createdAt: serverTimestamp(),
+        uploadedBy: "patient",
+        options: DEFAULT_OPTIONS,
       });
     } catch (err) {
       console.error("Upload failed:", err);
+      alert("Could not upload and process the document.");
     } finally {
       setIsUploading(false);
+      e.target.value = "";
     }
   };
 
-  // --- NEW DELETE FUNCTION ---
   const handleDeleteDocument = async (docId: string) => {
     if (!window.confirm("Are you sure you want to delete this record? This cannot be undone.")) return;
 
@@ -87,7 +106,6 @@ export default function PatientDashboard() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* ... (Care Status Card and Upload Block remain exactly the same) ... */}
       <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
 
@@ -129,11 +147,16 @@ export default function PatientDashboard() {
           }`}>
             {isUploading ? <Loader2 className="animate-spin h-4 w-4" /> : null}
             {isUploading ? 'Syncing...' : 'Browse Files'}
-            <input type="file" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
+            <input
+              type="file"
+              className="hidden"
+              onChange={handleFileUpload}
+              disabled={isUploading}
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+            />
           </label>
         </div>
 
-        {/* History Table */}
         <div className="lg:col-span-2 bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm flex flex-col">
           <div className="px-8 py-6 bg-slate-50/50 border-b flex justify-between items-center">
             <span className="font-bold text-slate-800 flex items-center gap-2">
@@ -145,36 +168,33 @@ export default function PatientDashboard() {
           </div>
 
           <div className="divide-y divide-slate-100 flex-1">
-            {documents.map((doc) => (
-              <div key={doc.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                <Link to={`/document/${doc.id}?role=patient`} className="flex items-center gap-4 flex-1">
-                  <div className="p-3 bg-slate-100 rounded-xl text-slate-500 group-hover:text-indigo-600">
+            {documents.map((docItem) => (
+              <div key={docItem.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                <Link to={`/document/${docItem.id}?role=patient`} className="flex items-center gap-4 flex-1">
+                  <div className="p-3 bg-slate-100 rounded-xl text-slate-500">
                     <Clipboard className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="font-bold text-slate-700 block">{doc.name}</span>
+                    <span className="font-bold text-slate-700 block">{docItem.name}</span>
                     <span className="text-[10px] text-slate-400 font-medium">
-                      {doc.uploadedBy === 'doctor' ? `Sent by ${userData?.assignedDoctorName}` : 'Self-uploaded'}
+                      {docItem.uploadedBy === 'doctor' ? `Sent by ${userData?.assignedDoctorName}` : 'Self-uploaded'}
                     </span>
                   </div>
                 </Link>
                 <div className="flex items-center gap-4">
                   <span className="hidden md:inline text-[10px] text-slate-400 font-bold uppercase">
-                    {doc.createdAt?.toDate().toLocaleDateString()}
+                    {docItem.createdAt?.toDate?.()?.toLocaleDateString?.()}
                   </span>
                   <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full uppercase">
-                    Ready
+                    {docItem.status}
                   </span>
-
-                  {/* NEW DELETE BUTTON */}
                   <button
-                    onClick={() => handleDeleteDocument(doc.id)}
+                    onClick={() => handleDeleteDocument(docItem.id)}
                     className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                     title="Delete Record"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
-
                 </div>
               </div>
             ))}

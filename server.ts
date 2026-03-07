@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { processMedicalDocument } from "./server/services/gemini";
+import documentsRouter from './src/routes/documents';
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import multer from "multer";
@@ -8,10 +9,12 @@ import path from "path";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = 3001;
 
   app.use(cors());
   app.use(express.json());
+  app.use("/uploads", express.static(path.resolve("uploads")));
+  app.use("/api/documents", documentsRouter);
 
   // Configure multer for file uploads (in-memory for now)
   const upload = multer({ storage: multer.memoryStorage() });
@@ -37,12 +40,12 @@ async function startServer() {
         detailLevel: "summary"
         }
       );
-      
+
       // TODO: Implement Gemini AI processing here
       // 1. Convert file buffer to base64
       // 2. Call Gemini API to parse and summarize the document
       // 3. Return structured data (prioritized items, vague details, etc.)
-      
+
       res.json({structuredData: analysis});
         // Mock response for now
     } catch (error) {

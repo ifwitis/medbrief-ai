@@ -1,34 +1,33 @@
-// --- Upload / Input Types ---
+// src/types/index.ts
 
-export interface Document {
-  id: string;
-  name: string;
-  date: string;
-  status: 'processing' | 'ready';
-}
+export type DocumentStatus = "processing" | "ready" | "failed";
+export type UserRole = "patient" | "doctor";
+export type AudienceDifficulty = "layman" | "medical";
+export type DetailLevel = "summary" | "detailed";
+export type Clarity = "High" | "Medium" | "Low";
+export type Urgency = "High" | "Medium" | "Low";
 
 export interface TranslationConfig {
-  language: string; // e.g., 'English', 'Spanish', 'Chinese'
-  difficulty: 'layman' | 'medical';
-  detailLevel: 'summary' | 'detailed';
+  language: string;
+  difficulty: AudienceDifficulty;
+  detailLevel: DetailLevel;
 }
 
-// --- AI Response Types ---
-
-/**
- * Priority Item to be listed for each client's document
- *  Represented by unique id, subject title, and description summary of item
- *  Keep source text for accuracy
- *  Rank by severity/priority (0 = highest)
- *  Clarity represents how understandable the original text was
- */
 export interface PriorityItem {
   id: number;
   title: string;
   description: string;
   source: string;
   rank: number;
-  clarity: 'High' | 'Medium' | 'Low';
+  clarity: Clarity;
+  category?: string;
+}
+
+export interface VagueDetail {
+  id: number;
+  text: string;
+  source: string;
+  clarity: Clarity;
 }
 
 export interface Translation {
@@ -36,22 +35,72 @@ export interface Translation {
   content: string;
 }
 
-export interface Action {
+export interface ActionItem {
   id: number;
   title: string;
   description: string;
   source: string;
-  urgency: 'High' | 'Medium' | 'Low';
+  urgency: Urgency;
   approved: boolean;
 }
 
-/**
- * Full Document Result to be returned to the client (patient or doctor)
- */
-export interface DocumentResult {
-  summary: string;
-  priorityItems: PriorityItem[];
-  translations: Translation[];
-  actions: Action[];
+export interface CaregiverMedication {
+  name: string;
+  dosage: string;
+  frequency: string;
+  purpose: string;
 }
 
+export interface CaregiverAppointment {
+  provider: string;
+  purpose: string;
+  date: string;
+}
+
+export interface CaregiverSummary {
+  medications: CaregiverMedication[];
+  lifestyle: string[];
+  appointments: CaregiverAppointment[];
+}
+
+export interface DocumentResult {
+  summary: string;
+  originalLanguage?: string;
+  priorityItems: PriorityItem[];
+  vagueDetails: VagueDetail[];
+  caregiverSummary: CaregiverSummary;
+  translations: Translation[];
+  actions: ActionItem[];
+  processedAt?: string;
+}
+
+export interface MedicalDocument {
+  id: string;
+  name: string;
+  status: DocumentStatus;
+  uploadedBy: UserRole;
+  createdAt?: any; // Firestore Timestamp
+  patientId: string;
+  patientName: string;
+  doctorId: string | null;
+
+  aiResult: DocumentResult | null;
+  processingOptions: TranslationConfig;
+
+  fileMeta: {
+    mimeType: string;
+    size: number;
+    originalName: string;
+    storagePath?: string;
+    downloadURL?: string;
+  };
+}
+
+export interface UploadDocumentParams {
+  file: File;
+  patientId: string;
+  patientName: string;
+  doctorId: string | null;
+  uploadedBy: UserRole;
+  options: TranslationConfig;
+}
