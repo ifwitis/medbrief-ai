@@ -2,7 +2,9 @@ import { initializeApp, FirebaseApp } from "firebase/app";
 import { getFirestore, Firestore } from "firebase/firestore";
 import { getAuth, Auth } from "firebase/auth";
 const apiKey = process.env.FIREBASE_API_KEY;
-
+if (!apiKey) {
+  throw new Error("FIREBASE_API_KEY is not defined in the .env file");
+}
 const firebaseConfig = {
   apiKey: apiKey,
   authDomain: "medconnect-ai-2f5ba.firebaseapp.com",
