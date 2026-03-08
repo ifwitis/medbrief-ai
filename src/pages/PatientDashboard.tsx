@@ -77,19 +77,48 @@ export default function PatientDashboard() {
     const user = auth.currentUser; 
     if (!file || !user) return;
     setIsUploading(true);
-
+    
     try {
-      await addDoc(collection(db, "documents"), {
-        name: file.name,
-        patientId: user.uid,
-        patientName: userData?.displayName || user.email?.split('@')[0],
-        doctorId: userData?.assignedDoctorId || null,
-        status: 'Ready',
-        uploadedBy: 'patient',
-        createdAt: serverTimestamp(),
+      const formData = new FormData();
+      formData.append('document', file);
+
+      const response = await fetch('http://localhost:3000/api/documents/upload', {
+        method: 'POST',
+        body: formData,
       });
-    } catch (err) {
+
+      // NEW: Smart error handling that reads the message from the server
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Server upload failed');
+      }
+
+      const result = await response.json();
+
+      if (result.structuredData) {
+        const docRef = await addDoc(collection(db, "documents"), {
+          name: file.name,
+          patientId: user.uid,
+          patientName: userData?.displayName || user.email?.split('@')[0],
+          doctorId: userData?.assignedDoctorId || null,
+          status: 'Ready',
+          uploadedBy: 'patient',
+          createdAt: serverTimestamp(),
+          aiSummary: result.structuredData
+        });
+
+        const fileUrl = URL.createObjectURL(file);
+        navigate(`/document/${docRef.id}?role=patient`, { 
+          state: { 
+            initialData: result.structuredData,
+            fileUrl: fileUrl 
+          } 
+        });
+      }
+    } catch (err: any) {
       console.error("Upload failed:", err);
+      // Alerts the specific error message sent from the server!
+      alert(err.message || "Failed to analyze the document. Is your server running?");
     } finally {
       setIsUploading(false);
     }
@@ -135,13 +164,13 @@ export default function PatientDashboard() {
           Hello, {userData?.displayName || userData?.email?.split('@')[0] || "Patient"} 👋
         </h1>
         <p className="text-slate-500 font-medium mt-1 text-sm">
-          Welcome to your secure health portal.
+          Welcome to your secure health portal. Here is a summary of your care.
         </p>
       </div>
 
       <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
-
+        
         <div className="flex items-center gap-5 z-10">
           <div className="bg-indigo-500/20 p-4 rounded-2xl border border-indigo-500/30 shadow-inner">
             <Stethoscope className="text-indigo-400 h-8 w-8" />
@@ -158,7 +187,7 @@ export default function PatientDashboard() {
         </div>
 
         {userData?.assignedDoctorId && (
-          <Link
+          <Link 
             to={`/chat/room_${userData.assignedDoctorId}_${auth.currentUser?.uid}?name=${encodeURIComponent(userData?.assignedDoctorName || 'Doctor')}`}
             className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-4 rounded-2xl font-bold transition-all text-center flex items-center justify-center gap-3 shadow-lg active:scale-95 z-10"
           >
@@ -211,8 +240,8 @@ export default function PatientDashboard() {
             <Upload className="h-8 w-8 text-indigo-600" />
           </div>
           <h3 className="font-bold text-slate-900 text-lg">Add Medical Record</h3>
-          <p className="text-sm text-slate-400 mb-6 max-w-[200px]">Upload lab results or clinical notes.</p>
-
+          <p className="text-sm text-slate-400 mb-6 max-w-[200px]">Upload lab results, X-rays, or clinical notes.</p>
+          
           <label className={`cursor-pointer px-8 py-3 rounded-xl font-bold text-sm transition-all flex items-center gap-2 ${
             isUploading ? 'bg-slate-200 text-slate-500' : 'bg-slate-900 text-white hover:bg-slate-800 shadow-md'
           }`}>
@@ -234,9 +263,9 @@ export default function PatientDashboard() {
 
           <div className="divide-y divide-slate-100 flex-1">
             {documents.map((doc) => (
-              <div key={doc.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
-                <Link to={`/document/${doc.id}?role=patient`} className="flex items-center gap-4 flex-1">
-                  <div className="p-3 bg-slate-100 rounded-xl text-slate-500 group-hover:text-indigo-600 transition-colors">
+              <div key={doc.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                <Link to={`/document/${doc.id}?role=patient`} className="flex items-center gap-4">
+                  <div className="p-3 bg-slate-100 rounded-xl text-slate-500 group-hover:text-indigo-600">
                     <Clipboard className="h-5 w-5" />
                   </div>
                   <div>
@@ -253,14 +282,6 @@ export default function PatientDashboard() {
                   <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full uppercase">
                     Ready
                   </span>
-
-                  <button
-                    onClick={() => handleDeleteDocument(doc.id)}
-                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                    title="Delete Record"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
                 </div>
               </div>
             ))}
